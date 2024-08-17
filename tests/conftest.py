@@ -1,19 +1,15 @@
-from sqlite3 import IntegrityError
-from unittest.mock import patch
 from fastapi.testclient import TestClient
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from src.auth.pass_utils import get_password_hash
 from src.auth.utils import create_access_token, create_refresh_token
-from src.auth.schemas import RoleEnum, UserCreate
+from src.auth.pass_utils import get_password_hash
+from src.auth.schemas import RoleEnum
 from config.db import Base, get_db
 from main import app
-from src.auth.models import User
+from src.auth.models import User, Role
 from src.contacts.models import Contact
-from src.auth.models import Role
 
-# Используем тестовую базу данных
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
 
 engine = create_engine(
@@ -27,10 +23,8 @@ def client():
 
 @pytest.fixture(scope="module")
 def setup_db():
-    # Создание всех таблиц
     Base.metadata.create_all(bind=engine)
     yield
-    # Удаление всех таблиц
     Base.metadata.drop_all(bind=engine)
 
 @pytest.fixture(scope="function")
@@ -38,14 +32,13 @@ def db_session(setup_db):
     session = TestingSessionLocal()
     try:
         yield session
-        session.rollback()  # Rollback any changes after each test
+        session.rollback() 
     finally:
         session.close()
 
 @pytest.fixture(scope="function")
-def user_password(faker):
-    # Генерация пароля для использования в тестах
-    return faker.password()
+def user_password():
+    return "test_password"
 
 @pytest.fixture(scope="function")
 def user_role(db_session):
@@ -57,11 +50,11 @@ def user_role(db_session):
     return role
 
 @pytest.fixture(scope="function")
-def test_user(db_session, faker, user_password, user_role):
+def test_user(db_session, user_password, user_role):
     hashed_password = get_password_hash(user_password)
     new_user = User(
-        username=faker.user_name(),
-        email=faker.email(),
+        username="test_user",
+        email="test_user@example.com",
         is_active=True,
         hashed_password=hashed_password,
         role_id=user_role.id,
@@ -69,19 +62,8 @@ def test_user(db_session, faker, user_password, user_role):
 
     db_session.add(new_user)
     db_session.commit()
-    db_session.refresh(new_user)  # To get the ID from the database
+    db_session.refresh(new_user) 
     return new_user
-
-@pytest.fixture(scope="function")
-def override_get_db(db_session):
-    def _get_db():
-        with db_session as session:
-            yield session
-
-    app.dependency_overrides[get_db] = _get_db
-
-    yield
-    app.dependency_overrides.clear()
 
 @pytest.fixture(scope="function")
 def auth_headers(test_user):
@@ -95,17 +77,26 @@ def auth_headers(test_user):
     return headers
 
 @pytest.fixture(scope="function")
-def test_user_contact(db_session, test_user, faker) -> Contact:
+def override_get_db(db_session):
+    def _get_db():
+        with db_session as session:
+            yield session
+
+    app.dependency_overrides[get_db] = _get_db
+
+    yield
+    app.dependency_overrides.clear()
+
+@pytest.fixture(scope="function")
+def test_user_contact(db_session, test_user):
     contact = Contact(
-        first_name=faker.first_name(),
-        last_name=faker.last_name(),
-        email=faker.email(),
-        phone_number=faker.phone_number(),
-        owner_id=test_user.id,
-        birthday=faker.date_of_birth(),
-        additional_info=faker.text(),  # Normally optional field with some content
+        first_name="John",
+        last_name="Doe",
+        email="john.doe@example.com",
+        phone_number="123456789",
     )
+    contact.user_id = test_user.id
     db_session.add(contact)
     db_session.commit()
-    db_session.refresh(contact)
+    db_session.refresh(contact) 
     return contact
